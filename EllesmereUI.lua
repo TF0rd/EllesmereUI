@@ -256,6 +256,24 @@ local CLASS_COLOR_MAP = {
     WARRIOR      = { r = 0.78, g = 0.61, b = 0.43 },  -- #C69B6D
 }
 
+-------------------------------------------------------------------------------
+--  Sidebar search index: offscreen build parent
+--  Hidden frame positioned far offscreen, used by the panel-open background
+--  ticker to build pages for unvisited modules without flashing them on
+--  screen. Created once at file load, reused across all background builds.
+--  Wrapped in do/end so its locals don't add to the chunk's main function
+--  frame (Lua's MAXVARS limit is 200 per function).
+-------------------------------------------------------------------------------
+do
+    if not EllesmereUI._searchIndexParent then
+        local f = CreateFrame("Frame", "EllesmereUI_SearchIndexParent", UIParent)
+        f:SetSize(1, 1)
+        f:SetPoint("TOP", UIParent, "TOP", 0, 10000)
+        f:Hide()
+        EllesmereUI._searchIndexParent = f
+    end
+end
+
 -- Font (Expressway lives in EllesmereUI/media)
 local EXPRESSWAY = MEDIA_PATH .. "fonts\\Expressway.ttf"
 
@@ -6436,6 +6454,48 @@ local function CreateMainFrame()
             if self._notEnabled then return end
             if self._loaded and modules[self._folder] then
                 EllesmereUI:SelectModule(self._folder)
+                -- If a sidebar search is active AND this module has
+                -- indexed pages, auto-navigate to the page with the
+                -- strongest match and seed the in-page "Search Module
+                -- Settings..." box with the same query. This gives the
+                -- user the full filter + highlight experience for free.
+                local query = EllesmereUI._sidebarSearchText
+                if not query or query == "" then return end
+                local idx = EllesmereUI._sidebarSearchIndex
+                if not (idx and idx[self._folder]) then return end
+                local queryWords = {}
+                for w in query:lower():gmatch("%S+") do
+                    queryWords[#queryWords + 1] = w
+                end
+                if #queryWords == 0 then return end
+                local bestPage, bestScore = nil, 0
+                for pageName, page in pairs(idx[self._folder]) do
+                    if page.built then
+                        local haystack = table.concat(page.labels or {}, " ")
+                            .. " " .. table.concat(page.sections or {}, " ")
+                        local score = 0
+                        for _, word in ipairs(queryWords) do
+                            if haystack:find(word, 1, true) then
+                                score = score + 1
+                            end
+                        end
+                        if score > bestScore then
+                            bestScore, bestPage = score, pageName
+                        end
+                    end
+                end
+                if bestPage and EllesmereUI.SelectPage then
+                    EllesmereUI:SelectPage(bestPage)
+                end
+                -- Seed the in-page search box AFTER the page switch.
+                -- Setting the text fires OnTextChanged which calls
+                -- ApplyInlineSearch(query, true) immediately and a
+                -- debounced ApplyInlineSearch(query) 0.5s later for the
+                -- highlight pulse. SelectPage's module-switch code
+                -- clears the in-page box, so we set it after.
+                if bestPage and tabBar and tabBar._searchBox then
+                    tabBar._searchBox:SetText(query)
+                end
             end
         end)
 
@@ -8480,6 +8540,7 @@ function EllesmereUI:SelectPage(pageName)
             local startY = -6
 
             totalH = config.buildPage(pageName, wrapper, startY) or 600
+            EllesmereUI._HarvestPageLabels(activeModule, pageName, wrapper)
             contentFrame:SetHeight(totalH + 30)
         end
 
@@ -8577,6 +8638,7 @@ function EllesmereUI:RefreshPage(force)
     if config.buildPage then
         local startY = -6
         totalH = config.buildPage(activePage, wrapper, startY) or 600
+        EllesmereUI._HarvestPageLabels(activeModule, activePage, wrapper)
         contentFrame:SetHeight(totalH + 30)
     end
 
@@ -8685,6 +8747,72 @@ function EllesmereUI:SelectModule(folderName)
 end
 
 -------------------------------------------------------------------------------
+--  Sidebar search index (deep option label search)
+--  Cache structure:
+--    EllesmereUI._sidebarSearchIndex[folder][pageName] = {
+--        labels   = { lowercased _labelText, _labelTextLoc, ... },
+--        sections = { lowercased _sectionName, ... },
+--        built    = true,
+--    }
+--  Populated two ways:
+--    1. Synchronously when a page is built during normal use (page's labels
+--       are already in memory at that point; we just walk the wrapper and
+--       copy them into the cache).
+--    2. In the background (5 pages per OnUpdate tick) for the first ~2s
+--       after the panel opens, so modules the user hasn't visited still
+--       match "Texture" etc.
+--  Sidebar search consults this cache in addition to display + pages +
+--  searchTerms. The cache is built once and reused across keystrokes
+--  within the same play session.
+--  Wrapped in `do ... end` so its locals don't add to the chunk's main
+--  function frame (Lua's MAXVARS limit is 200 per function).
+-------------------------------------------------------------------------------
+do
+    EllesmereUI._sidebarSearchIndex = EllesmereUI._sidebarSearchIndex or {}
+
+    -- Harvest labels from an already-built page wrapper. Cheap: O(rows) walk
+    -- over already-created frame children, no widget allocation.
+    local function HarvestPageLabels(folder, pageName, wrapper)
+        if not wrapper or not wrapper.GetChildren then return end
+        local idx = EllesmereUI._sidebarSearchIndex
+        idx[folder] = idx[folder] or {}
+        local entry = idx[folder][pageName]
+        if entry and entry.built then return end
+        local labels, sections = {}, {}
+        -- Collect ALL descendants with the option-row or section-header tags.
+        -- TagOptionRow/WidgetFactory:SectionHeader set _isOptionRow / _isSectionHeader.
+        -- We walk every level so wrappers/cards don't hide rows from us.
+        local stack, seen = { wrapper:GetChildren() }, {}
+        while #stack > 0 do
+            local f = table.remove(stack)
+            if f and not seen[f] then
+                seen[f] = true
+                if f._isOptionRow then
+                    if f._labelText and f._labelText ~= "" then
+                        labels[#labels + 1] = f._labelText:lower()
+                    end
+                    if f._labelTextLoc and f._labelTextLoc ~= "" then
+                        labels[#labels + 1] = f._labelTextLoc:lower()
+                    end
+                elseif f._isSectionHeader then
+                    if f._sectionName and f._sectionName ~= "" then
+                        sections[#sections + 1] = f._sectionName:lower()
+                    end
+                end
+                if f.GetChildren then
+                    for _, child in ipairs({ f:GetChildren() }) do
+                        stack[#stack + 1] = child
+                    end
+                end
+            end
+        end
+        idx[folder][pageName] = { labels = labels, sections = sections, built = true }
+    end
+
+    EllesmereUI._HarvestPageLabels = HarvestPageLabels
+end
+
+-------------------------------------------------------------------------------
 --  Sidebar search filter
 --  Iterates the last order captured by RefreshSidebarStates, hides any button
 --  whose addon display name and registered page names don't contain the query,
@@ -8729,6 +8857,50 @@ function EllesmereUI._applySidebarSearch(text)
                 parts[#parts + 1] = tostring(mod.searchTerms):lower()
             end
         end
+
+        -- Deep search index: option-row labels harvested from every page in
+        -- this module. Populated synchronously by _HarvestPageLabels when a
+        -- page is built (SelectPage/RefreshPage), and in the background by
+        -- the panel-open ticker for unvisited modules. Including this makes
+        -- queries like "Texture" or "Width" match the module that has a
+        -- setting with that word in its label.
+        local idx = EllesmereUI._sidebarSearchIndex
+        -- Lazy fallback: if the background ticker hasn't reached this module
+        -- yet (e.g. user searched before the 1-2s build window completed,
+        -- or the ticker silently failed for this folder), build every page
+        -- synchronously on the offscreen parent and harvest. One-time cost
+        -- per module, paid only on the first search that hits an unindexed
+        -- folder. This guarantees "open gui -> search -> results" works
+        -- for every module on the first try, regardless of ticker timing.
+        --
+        -- buildPage(pageName, parent, yOffset) CREATES widgets ON the parent
+        -- and RETURNS the total height (a number). The wrapper IS the parent
+        -- we pass in. We do NOT use the return value as the wrapper.
+        if not (idx and idx[info.folder]) and mod and mod.buildPage and mod.pages
+                and EllesmereUI._searchIndexParent and EllesmereUI._HarvestPageLabels then
+            for _, p in ipairs(mod.pages) do
+                local wrapper = CreateFrame("Frame", nil, EllesmereUI._searchIndexParent)
+                local ok = pcall(mod.buildPage, p, wrapper, 0)
+                if ok then
+                    EllesmereUI._HarvestPageLabels(info.folder, p, wrapper)
+                end
+            end
+        end
+        if idx and idx[info.folder] then
+            for _, page in pairs(idx[info.folder]) do
+                if page.labels then
+                    for _, lbl in ipairs(page.labels) do
+                        parts[#parts + 1] = lbl
+                    end
+                end
+                if page.sections then
+                    for _, sec in ipairs(page.sections) do
+                        parts[#parts + 1] = sec
+                    end
+                end
+            end
+        end
+
         local haystack = table.concat(parts, " ")
         for _, word in ipairs(queryWords) do
             if not haystack:find(word, 1, true) then return false end
@@ -8995,6 +9167,49 @@ function EllesmereUI:Show()
     CreateMainFrame()
     RefreshSidebarStates()
     mainFrame:Show()
+    -- Start (or resume) the background search-index build. We index a few
+    -- pages per OnUpdate tick for the first ~2s after panel open, so the
+    -- user sees the panel open instantly and the index fills in as they
+    -- look at it. Modules whose pages have already been built during
+    -- normal use are no-ops. This work is fully off the slash-command
+    -- critical path; it never blocks the panel show.
+    if not EllesmereUI._searchIndexTicker and modules and EllesmereUI._HarvestPageLabels then
+        local queue, cursor = {}, 1
+        for folder, mod in pairs(modules) do
+            if mod and mod.pages and mod.buildPage then
+                for _, pageName in ipairs(mod.pages) do
+                    queue[#queue + 1] = { folder = folder, pageName = pageName }
+                end
+            end
+        end
+        local frame = CreateFrame("Frame")
+        frame:SetScript("OnUpdate", function(self)
+            for _ = 1, 5 do
+                if cursor > #queue then
+                    self:SetScript("OnUpdate", nil)
+                    EllesmereUI._searchIndexTicker = nil
+                    return
+                end
+                local item = queue[cursor]
+                cursor = cursor + 1
+                local idx = EllesmereUI._sidebarSearchIndex
+                if not (idx and idx[item.folder] and idx[item.folder][item.pageName]
+                        and idx[item.folder][item.pageName].built) then
+                    local mod = modules[item.folder]
+                    if mod and mod.buildPage then
+                        -- buildPage returns a height (number), not a frame.
+                        -- The wrapper IS the parent arg we pass in.
+                        local wrapper = CreateFrame("Frame", nil, EllesmereUI._searchIndexParent)
+                        local ok = pcall(mod.buildPage, item.pageName, wrapper, 0)
+                        if ok then
+                            EllesmereUI._HarvestPageLabels(item.folder, item.pageName, wrapper)
+                        end
+                    end
+                end
+            end
+        end)
+        EllesmereUI._searchIndexTicker = frame
+    end
     ShowSidebarUnlockTip()
 end
 function EllesmereUI:Hide()   if mainFrame then mainFrame:Hide() end end
