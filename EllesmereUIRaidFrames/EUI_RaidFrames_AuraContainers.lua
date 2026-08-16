@@ -232,15 +232,27 @@ local function ApplyRFDebuffText(button, d, style)
             d.rfDurFont = fontKey
             EllesmereUI.ApplyIconTextFont(d.duration, path, style.durSize or 8, "raidFrames")
         end
+        if d.rfDurWidth ~= style.width then
+            d.duration:SetWidth(style.width or 0)
+            d.rfDurWidth = style.width
+        end
         local c = style.durColor
         d.duration:SetTextColor(c and c.r or 1, c and c.g or 1, c and c.b or 1)
         -- Anchor change-guarded, stamp AFTER the calls: SetPoint against the button
         -- is policed under the 12.1 aura-secret restriction, so unchanged offsets must
         -- make zero button-touching calls to keep restyles live in-instance.
-        local aKey = (style.durOffX or 0) .. "|" .. (style.durOffY or 0)
+        local durPoint = string.upper(style.durAnchor or "CENTER")
+        local durJustify = (durPoint == "LEFT" or durPoint == "TOPLEFT" or durPoint == "BOTTOMLEFT") and "LEFT"
+            or (durPoint == "RIGHT" or durPoint == "TOPRIGHT" or durPoint == "BOTTOMRIGHT") and "RIGHT"
+            or "CENTER"
+        if d.rfDurJustify ~= durJustify then
+            d.duration:SetJustifyH(durJustify)
+            d.rfDurJustify = durJustify
+        end
+        local aKey = durPoint .. "|" .. (style.durOffX or 0) .. "|" .. (style.durOffY or 0)
         if d.rfDurAnchor ~= aKey then
             d.duration:ClearAllPoints()
-            d.duration:SetPoint("CENTER", button, "CENTER", style.durOffX or 0, style.durOffY or 0)
+            d.duration:SetPoint(durPoint, d.stackCarrier, durPoint, style.durOffX or 0, style.durOffY or 0)
             d.rfDurAnchor = aKey
         end
         d.duration:SetShown(not style.hideDurationText)
@@ -252,12 +264,24 @@ local function ApplyRFDebuffText(button, d, style)
             d.rfStackFont = fontKey
             EllesmereUI.ApplyIconTextFont(d.stack, path, style.stackSize or 8, "raidFrames")
         end
+        if d.rfStackWidth ~= style.width then
+            d.stack:SetWidth(style.width or 0)
+            d.rfStackWidth = style.width
+        end
         local c = style.stackColor
         d.stack:SetTextColor(c and c.r or 1, c and c.g or 1, c and c.b or 1)
-        local sKey = (style.stackOffX or 0) .. "|" .. (style.stackOffY or 0)
+        local stackPoint = string.upper(style.stackAnchor or "BOTTOMRIGHT")
+        local stackJustify = (stackPoint == "LEFT" or stackPoint == "TOPLEFT" or stackPoint == "BOTTOMLEFT") and "LEFT"
+            or (stackPoint == "RIGHT" or stackPoint == "TOPRIGHT" or stackPoint == "BOTTOMRIGHT") and "RIGHT"
+            or "CENTER"
+        if d.rfStackJustify ~= stackJustify then
+            d.stack:SetJustifyH(stackJustify)
+            d.rfStackJustify = stackJustify
+        end
+        local sKey = stackPoint .. "|" .. (style.stackOffX or 0) .. "|" .. (style.stackOffY or 0)
         if d.rfStackAnchor ~= sKey then
             d.stack:ClearAllPoints()
-            d.stack:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", style.stackOffX or 0, style.stackOffY or 0)
+            d.stack:SetPoint(stackPoint, d.stackCarrier, stackPoint, style.stackOffX or 0, style.stackOffY or 0)
             d.rfStackAnchor = sKey
         end
     end
@@ -347,11 +371,13 @@ local function BuildDebuffStyle(s, sizeOverride)
         durColor = s.debuffDurTextColor,
         durOffX = s.debuffDurTextOffsetX,
         durOffY = s.debuffDurTextOffsetY,
+        durAnchor = s.debuffDurTextAnchor,
         showStacks = s.debuffShowStacks ~= false,
         stackSize = s.debuffStacksTextSize,
         stackColor = s.debuffStacksTextColor,
         stackOffX = s.debuffStacksOffsetX,
         stackOffY = s.debuffStacksOffsetY,
+        stackAnchor = s.debuffStacksTextAnchor,
         -- 4-state tooltip mode: true/nil=hidden, false=shown, "combat"=hidden in
         -- combat, "cursor"=shown at cursor. Raw key already in DebuffStyleFP.
         noTooltips = not (s.debuffHideTooltips == false
@@ -688,8 +714,8 @@ local classFP = {}
 local function DebuffStyleFP(s, font)
     return FP(font, s.debuffSize, s.debuffIconZoom, s.debuffBorderSize, CK(s.debuffBorderColor),
         s.debuffShowSwipe, s.debuffShowDurText, s.debuffDurTextSize, CK(s.debuffDurTextColor),
-        s.debuffDurTextOffsetX, s.debuffDurTextOffsetY, s.debuffShowStacks, s.debuffStacksTextSize,
-        CK(s.debuffStacksTextColor), s.debuffStacksOffsetX, s.debuffStacksOffsetY, s.debuffHideTooltips,
+        s.debuffDurTextOffsetX, s.debuffDurTextOffsetY, s.debuffDurTextAnchor, s.debuffShowStacks, s.debuffStacksTextSize,
+        CK(s.debuffStacksTextColor), s.debuffStacksOffsetX, s.debuffStacksOffsetY, s.debuffStacksTextAnchor, s.debuffHideTooltips,
         -- Dispel icon ring: thickness + the user palette the engine tints with.
         s.dispelIconBorderSize, CK(s.dispelColorMagic), CK(s.dispelColorCurse),
         CK(s.dispelColorDisease), CK(s.dispelColorPoison), CK(s.dispelColorBleed),
@@ -1255,12 +1281,14 @@ local function BuildBmIconStyle(ind, iscale, size)
         durColor = ind.durationTextColor,
         durOffX = ind.durationTextOffsetX,
         durOffY = ind.durationTextOffsetY,
+        durAnchor = ind.durationTextAnchor,
         durationColorCurve = BmThresholdCurve(ind),
         showStacks = ind.showStacks ~= false,
         stackSize = ind.stacksTextSize,
         stackColor = ind.stacksTextColor,
         stackOffX = ind.stacksOffsetX or -1,
         stackOffY = ind.stacksOffsetY or 2,
+        stackAnchor = ind.stacksTextAnchor,
         alpha = (ind.iconOpacity or 100) / 100,
         levelOffset = BM_FRAMELVL[ind.frameLevel or "medium"] or 13,
         noTooltips = BmTipsOff(),
@@ -1933,18 +1961,18 @@ local function BmVisualKey(kind, ind, size, font, spellID)
     if kind == "icon" then
         return FP(font, size, ind.iconOpacity, ind.hideIcon, ind.indBorderSize, CK(ind.indBorderColor),
             ind.showDuration, ind.showDurationText, ind.durationTextSize, CK(ind.durationTextColor),
-            ind.durationTextOffsetX, ind.durationTextOffsetY, ind.thresholdEnabled, ind.threshold,
+            ind.durationTextOffsetX, ind.durationTextOffsetY, ind.durationTextAnchor, ind.thresholdEnabled, ind.threshold,
             CK(ind.thresholdColor), ind.showStacks, ind.stacksTextSize, CK(ind.stacksTextColor),
-            ind.stacksOffsetX, ind.stacksOffsetY, ind.frameLevel, tostring(BmTipMode()),
+            ind.stacksOffsetX, ind.stacksOffsetY, ind.stacksTextAnchor, ind.frameLevel, tostring(BmTipMode()),
             ind.displayGlowType, ind.displayGlowClassColor,
             ind.displayGlowR, ind.displayGlowG, ind.displayGlowB)
     end
     if kind == "square" then
         return FP(font, size, CK(BmSquareColor(ind, spellID)), ind.showDuration, ind.indBorderSize,
             CK(ind.indBorderColor), ind.frameLevel, ind.showDurationText, ind.durationTextSize,
-            CK(ind.durationTextColor), ind.durationTextOffsetX, ind.durationTextOffsetY,
+            CK(ind.durationTextColor), ind.durationTextOffsetX, ind.durationTextOffsetY, ind.durationTextAnchor,
             ind.thresholdEnabled, ind.threshold, CK(ind.thresholdColor), ind.showStacks,
-            ind.stacksTextSize, CK(ind.stacksTextColor), ind.stacksOffsetX, ind.stacksOffsetY, tostring(BmTipMode()),
+            ind.stacksTextSize, CK(ind.stacksTextColor), ind.stacksOffsetX, ind.stacksOffsetY, ind.stacksTextAnchor, tostring(BmTipMode()),
             ind.displayGlowType, ind.displayGlowClassColor,
             ind.displayGlowR, ind.displayGlowG, ind.displayGlowB)
     end
@@ -2048,7 +2076,7 @@ end
 local function BmSimpleStyleFP(bs, font, iscale)
     return FP(font, iscale, bs.size, bs.iconZoom, bs.borderSize, CK(bs.borderColor), bs.showSwipe,
         bs.showDurText, bs.durTextSize, CK(bs.durTextColor), bs.durTextOffsetX, bs.durTextOffsetY,
-        tostring(BmTipMode()))
+        bs.durTextAnchor, bs.stacksAnchor, tostring(BmTipMode()))
 end
 
 local function BmSimpleGeoFP(bs, iscale, s)
@@ -2092,7 +2120,9 @@ local function BuildBmSimpleStyle(bs, iscale)
         durColor = bs.durTextColor,
         durOffX = bs.durTextOffsetX,
         durOffY = bs.durTextOffsetY,
+        durAnchor = bs.durTextAnchor,
         showStacks = false, -- the legacy grid has no stack text
+        stackAnchor = bs.stacksAnchor,
         noTooltips = BmTipsOff(),
         tooltipCombatHide = BmTipMode() == "combat",
         tooltipAnchor = (BmTipMode() == "cursor") and "cursor" or nil,

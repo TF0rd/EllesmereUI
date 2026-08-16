@@ -98,6 +98,15 @@ local POSITION_ORDER = {
     "LEFT", "CENTER", "RIGHT",
     "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT",
 }
+local TEXT_POSITION_VALUES = {
+    topleft = "Top Left", top = "Top", topright = "Top Right",
+    left = "Left", center = "Center", right = "Right",
+    bottomleft = "Bottom Left", bottom = "Bottom", bottomright = "Bottom Right",
+}
+local TEXT_POSITION_ORDER = {
+    "topleft", "top", "topright", "left", "center", "right",
+    "bottomleft", "bottom", "bottomright",
+}
 
 local GROW_VALUES = {
     RIGHT  = "Right",
@@ -579,10 +588,12 @@ local function NewIndicator(indType, spells)
         ind.durationTextSize   = 8
         ind.durationTextOffsetX = 0
         ind.durationTextOffsetY = 0
+        ind.durationTextAnchor = "center"
         ind.stacksTextColor  = { r = 1, g = 1, b = 1 }
         ind.stacksTextSize   = 8
         ind.stacksOffsetX    = -1
         ind.stacksOffsetY    = 2
+        ind.stacksTextAnchor = "bottomright"
         ind.iconOpacity      = 100
         ind.indBorderSize    = 1
         ind.indBorderColor   = { r = 0, g = 0, b = 0 }
@@ -1699,9 +1710,15 @@ function ns.BM_ApplyPreviewIndicators(f, index, s)
                                         local sOY = (ind.stacksOffsetY or 0) * iscale
                                         local fp = (EllesmereUI.GetFontPath and EllesmereUI.GetFontPath("raidFrames")) or "Fonts\\FRIZQT__.TTF"
                                         EllesmereUI.ApplyIconTextFont(fr._count, fp, sSz, "raidFrames")
+                                        fr._count:SetWidth(fr:GetWidth())
                                         fr._count:SetTextColor(sc.r, sc.g, sc.b)
                                         fr._count:ClearAllPoints()
-                                        fr._count:SetPoint("BOTTOMRIGHT", fr, "BOTTOMRIGHT", 1 + sOX, -1 + sOY)
+                                        local stackPoint = string.upper(ind.stacksTextAnchor or "BOTTOMRIGHT")
+                                        local stackJustify = (stackPoint == "LEFT" or stackPoint == "TOPLEFT" or stackPoint == "BOTTOMLEFT") and "LEFT"
+                                            or (stackPoint == "RIGHT" or stackPoint == "TOPRIGHT" or stackPoint == "BOTTOMRIGHT") and "RIGHT"
+                                            or "CENTER"
+                                        fr._count:SetJustifyH(stackJustify)
+                                        fr._count:SetPoint(stackPoint, fr, stackPoint, sOX, sOY)
                                         fr._count:SetText(previewStacks)
                                     else
                                         fr._count:SetText("")
@@ -1729,7 +1746,12 @@ function ns.BM_ApplyPreviewIndicators(f, index, s)
                                                 EllesmereUI.ApplyIconTextFont(fr._durText, fp, ind.durationTextSize or 8, "raidFrames")
                                                 fr._durText:SetTextColor(dtc.r, dtc.g, dtc.b)
                                                 fr._durText:ClearAllPoints()
-                                                fr._durText:SetPoint("CENTER", fr, "CENTER",
+                                                local durPoint = string.upper(ind.durationTextAnchor or "CENTER")
+                                                local durJustify = (durPoint == "LEFT" or durPoint == "TOPLEFT" or durPoint == "BOTTOMLEFT") and "LEFT"
+                                                    or (durPoint == "RIGHT" or durPoint == "TOPRIGHT" or durPoint == "BOTTOMRIGHT") and "RIGHT"
+                                                    or "CENTER"
+                                                fr._durText:SetJustifyH(durJustify)
+                                                fr._durText:SetPoint(durPoint, fr, durPoint,
                                                     ind.durationTextOffsetX or 0, ind.durationTextOffsetY or 0)
                                                 fr._durText:SetText(fakeDisplay)
                                                 fr._durText:Show()
@@ -2155,7 +2177,8 @@ function ns.BM_BuildSimplePreview(parent, s, fontPath, PP, centerX, topY, noGrid
                             EllesmereUI.ApplyIconTextFont(cdText, fontPath, bs.durTextSize or 8, "raidFrames")
                             cdText:SetTextColor(dtc.r, dtc.g, dtc.b)
                             cdText:ClearAllPoints()
-                            cdText:SetPoint("CENTER", icon, "CENTER", bs.durTextOffsetX or 0, bs.durTextOffsetY or 0)
+                            local durPoint = string.upper(bs.durTextAnchor or "center")
+                            cdText:SetPoint(durPoint, icon, durPoint, bs.durTextOffsetX or 0, bs.durTextOffsetY or 0)
                         end
                     end
                 else
@@ -2169,7 +2192,8 @@ function ns.BM_BuildSimplePreview(parent, s, fontPath, PP, centerX, topY, noGrid
                     EllesmereUI.ApplyIconTextFont(icon._count, fontPath, bs.stacksTextSize or 8, "raidFrames")
                     icon._count:SetTextColor(sc.r, sc.g, sc.b)
                     icon._count:ClearAllPoints()
-                    icon._count:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT",
+                    local stackPoint = string.upper(bs.stacksAnchor or "bottomright")
+                    icon._count:SetPoint(stackPoint, icon, stackPoint,
                         bs.stacksOffsetX or -1, bs.stacksOffsetY or 2)
                     icon._count:SetText("3")
                 else
@@ -4683,6 +4707,9 @@ function ns.BM_BuildPage(pageName, parent, yOffset)
                         { type="slider", label="Text Size", min=6, max=26, step=1,
                           get=function() return ind.durationTextSize or 8 end,
                           set=function(v) ind.durationTextSize = v; ReloadAndUpdate() end },
+                        { type="dropdown", label="Position", values=TEXT_POSITION_VALUES, order=TEXT_POSITION_ORDER,
+                          get=function() return string.lower(ind.durationTextAnchor or "CENTER") end,
+                          set=function(v) ind.durationTextAnchor = v; ReloadAndUpdate() end },
                         { type="slider", label="Offset X", min=-20, max=20, step=1,
                           get=function() return ind.durationTextOffsetX or 0 end,
                           set=function(v) ind.durationTextOffsetX = v; ReloadAndUpdate() end },
@@ -4736,6 +4763,9 @@ function ns.BM_BuildPage(pageName, parent, yOffset)
                         { type="slider", label="Text Size", min=6, max=26, step=1,
                           get=function() return ind.stacksTextSize or 8 end,
                           set=function(v) ind.stacksTextSize = v; ReloadAndUpdate() end },
+                        { type="dropdown", label="Position", values=TEXT_POSITION_VALUES, order=TEXT_POSITION_ORDER,
+                          get=function() return string.lower(ind.stacksTextAnchor or "BOTTOMRIGHT") end,
+                          set=function(v) ind.stacksTextAnchor = v; ReloadAndUpdate() end },
                         { type="slider", label="Offset X", min=-20, max=20, step=1,
                           get=function() return ind.stacksOffsetX or 0 end,
                           set=function(v) ind.stacksOffsetX = v; ReloadAndUpdate() end },

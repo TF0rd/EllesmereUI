@@ -631,11 +631,13 @@ local defaults = {
             durTextSize     = 8,
             durTextOffsetX  = 0,
             durTextOffsetY  = 0,
+            durTextAnchor   = "center",
             showStacks      = true,
             stacksTextColor = { r = 1, g = 1, b = 1 },
             stacksTextSize  = 8,
             stacksOffsetX   = -1,
             stacksOffsetY   = 2,
+            stacksAnchor    = "bottomright",
         },
 
         buffHideTooltips = true,
@@ -662,6 +664,8 @@ local defaults = {
         debuffDurTextSize = 8,
         debuffDurTextOffsetX = 0,
         debuffDurTextOffsetY = 0,
+        debuffDurTextAnchor = "center",
+        debuffStacksTextAnchor = "bottomright",
 
         -- Range & misc
         oorAlpha         = 0.4,
